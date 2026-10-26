@@ -68,7 +68,7 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      /*list_push_back (&sema->waiters, &thread_current ()->elem);*/
+      /*T: Waiters are inserted in priority order, not at the back. */
       list_insert_ordered(&sema->waiters,&thread_current()->elem,thread_compare_priority,NULL);
       thread_block ();
     }
@@ -110,14 +110,15 @@ void
 sema_up (struct semaphore *sema) 
 {
   enum intr_level old_level;
-  /*T:*/
+  /*T: The thread we wake up, if any. */
   struct thread *t=NULL;
 
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
   if (!list_empty (&sema->waiters)) 
-  /*T: */
+  /*T: Wake the highest-priority waiter. Sort first, because donations
+       may have changed priorities while it waited. */
   {
     list_sort (&sema->waiters,thread_compare_priority,NULL);
     t=list_entry (list_pop_front (&sema->waiters),
@@ -126,7 +127,8 @@ sema_up (struct semaphore *sema)
   }
   sema->value++;
   intr_set_level (old_level);
-  /*T:*/
+  /*T: If we woke a more important thread, let it run now.
+       Never yield inside an interrupt handler, though. */
   if (t!=NULL && t->priority > thread_current()->priority) 
   {
     if (!intr_context()) 
@@ -212,7 +214,8 @@ lock_acquire (struct lock *lock)
 
   struct thread *cur=thread_current();
 
-  /*T: if need a lock, the priority donation chain works*/
+  /*T: The lock is taken: donate our priority to its holder, and on
+       down the chain if that holder is waiting for a lock too. */
   if (!thread_mlfqs && lock->holder!=NULL)
   {
     cur->wait_on_lock = lock;
@@ -229,7 +232,7 @@ lock_acquire (struct lock *lock)
   }
 
   sema_down (&lock->semaphore);
-  /*T: */
+  /*T: We have the lock now, so we're not waiting on anything. */
   if (!thread_mlfqs)
     cur->wait_on_lock = NULL;
   lock->holder = cur;
@@ -256,7 +259,7 @@ lock_try_acquire (struct lock *lock)
   if (success)
   {
     lock->holder = thread_current ();
-    /*T: add lock to the locks list*/
+    /*T: Remember we hold this lock, so its donations can be undone later. */
     list_push_back (&thread_current()->locks,&lock->elem);
   }
   return success;
@@ -273,26 +276,26 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  /*T: remove lock from the list*/
+  /*T: We no longer hold this lock. */
   struct thread *cur=thread_current();
   list_remove (&lock->elem);
 
   lock->holder = NULL;
 
-  /*T: */
+  /*T: Undo any priority that was donated through this lock. */
   if (!thread_mlfqs)
   {
-    /*T: reset the priority to base_priority*/
+    /*T: Start again from our own priority... */
     cur->priority=cur->base_priority;
 
-    /*T: check the max priority(waiters) from locks*/
+    /*T: ...then take the highest donation still coming from other locks. */
     struct list_elem *e;
     for (e=list_begin(&cur->locks);e!=list_end(&cur->locks);e=list_next(e))
     {
       struct lock *l=list_entry(e,struct lock,elem);
       if (!list_empty(&l->semaphore.waiters))
       {
-        /*T: list front ==> max priority by sorting in sema_down func*/
+        /*T: Waiters are kept sorted, so the front one has the highest priority. */
         struct thread *highest_waiter=list_entry(list_front(&l->semaphore.waiters),struct thread,elem);
         if (highest_waiter->priority > cur->priority)
           cur->priority=highest_waiter->priority;
@@ -368,7 +371,7 @@ cond_wait (struct condition *cond, struct lock *lock)
   lock_acquire (lock);
 }
 
-/*T:*/
+/*T: Orders condition waiters by the priority of the thread waiting on each. */
 bool cond_compare_priority (const struct list_elem *a,const struct list_elem *b,void *aux UNUSED)
 {
     struct semaphore_elem *sa=list_entry(a,struct semaphore_elem,elem);
@@ -393,7 +396,7 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (lock_held_by_current_thread (lock));
 
   if (!list_empty (&cond->waiters)) 
-  /*T:*/
+  /*T: Signal the highest-priority waiter first. */
   {
     list_sort (&cond->waiters,cond_compare_priority,NULL);
     sema_up (&list_entry (list_pop_front (&cond->waiters),

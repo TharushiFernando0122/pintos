@@ -4,8 +4,11 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-/*T: */
+/*T: Fixed-point math for the MLFQS scheduler. */
 #include "threads/fixed-point.h"
+
+struct child_process;
+struct file;
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -95,18 +98,22 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;     /* List element. */
     
-    /*T: */
+    /*T: MLFQS scheduler: niceness and recent CPU use (fixed-point). */
     int nice;
     int recent_cpu;
 
-    int64_t wakeup_ticks;      /*T: Thread wakeup time period*/
-    int base_priority;       /*T: to remember the orginal priority*/
-    struct list locks;      /*T: current locks list*/
-    struct lock *wait_on_lock;       /*T: current blocked thread lock*/
+    int64_t wakeup_ticks;      /*T: Tick at which a sleeping thread should wake up. */
+    int base_priority;       /*T: Priority before any donations. */
+    struct list locks;      /*T: Locks this thread holds. */
+    struct lock *wait_on_lock;       /*T: Lock this thread is waiting for, or NULL. */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct child_process *child_process; /*T: Shared with the parent: exit status and load result. */
+    struct list child_process_list;      /*T: One record per child started with exec. */
+    struct list file_name_list;          /*T: Files this process has open, with their fds. */
+    struct file *executable;             /*T: Our program file, kept open so nobody can write to it. */
 #endif
 
     /* Owned by thread.c. */
@@ -149,7 +156,7 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-/*T: */
+/*T: Sorts threads from highest to lowest priority. */
 bool thread_compare_priority (const struct list_elem *a,const struct list_elem *b,void *aux);
 
 #endif /* threads/thread.h */
