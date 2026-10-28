@@ -21,15 +21,14 @@
 #include "threads/synch.h"
 #include "threads/malloc.h"
 
-/*T: Most command-line words (program name + arguments) we accept. */
+/*T: Most command-line words*/
 #define MAX_ARGS 128
 
-/*T: What the parent hands to the new thread: the command line and
-     the shared status record. */
+/*T: What the parent hands to the new thread*/
 struct process_info
 {
-  char *fn_copy;                    /*T: Full command line (one page). */
-  struct child_process *child_proc; /*T: Status record shared with the child. */
+  char *fn_copy;                    /*T: Full command line*/
+  struct child_process *child_proc; 
 };
 
 static thread_func start_process NO_RETURN;
@@ -48,14 +47,13 @@ process_execute (const char *file_name)
   struct child_process *child_proc;
   struct process_info *proc_info;
 
-  /*T: Copy the command line; the caller may change it while the child
-       is starting. */
+  /*T: Copy the command line*/
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
-  /*T: The first word is the program name; it becomes the thread name. */
+  /*T: The first word is the program name*/
   char *name_buf = malloc (strlen (file_name) + 1);
   if (name_buf == NULL)
   {
@@ -64,8 +62,6 @@ process_execute (const char *file_name)
   }
   strlcpy (name_buf, file_name, strlen (file_name) + 1);
   char *save_ptr;
-  /*T: strtok_r skips leading spaces, so free name_buf, not exe_name.
-       A blank command line has nothing to run. */
   exe_name = strtok_r (name_buf, " ", &save_ptr);
   if (exe_name == NULL)
   {
@@ -74,7 +70,7 @@ process_execute (const char *file_name)
     return TID_ERROR;
   }
 
-  /*T: Status record shared with the new child. */
+  /*T: Status record shared with the new child*/
   child_proc = malloc (sizeof (struct child_process));
   if (child_proc == NULL)
   {
@@ -83,7 +79,7 @@ process_execute (const char *file_name)
     return TID_ERROR;
   }
 
-  /*T: Bundle for the new thread (see struct process_info). */
+  /*T: Bundle for the new thread*/
   proc_info = malloc (sizeof (struct process_info));
   if (proc_info == NULL)
   {
@@ -96,7 +92,7 @@ process_execute (const char *file_name)
   proc_info->fn_copy = fn_copy;
   proc_info->child_proc = child_proc;
 
-  /*T: Fill in the shared record before the child can see it. */
+  /*T: Fill in the shared record before the child can see it*/
   child_proc->pid = -1;  /*T: Filled in once we know the tid. */
   child_proc->exit_status = -1;
   child_proc->waited = false;
@@ -106,7 +102,7 @@ process_execute (const char *file_name)
   sema_init (&child_proc->wait_sema, 0);
   sema_init (&child_proc->load_sema, 0);
 
-  /*T: Start the new thread; it runs start_process(). */
+  /*T: Start the new thread*/
   tid = thread_create (exe_name, PRI_DEFAULT, start_process, proc_info);
   
   if (tid == TID_ERROR)
@@ -119,13 +115,10 @@ process_execute (const char *file_name)
   {
     child_proc->pid = tid;
     
-    /*T: So we can wait() for it later. */
     list_push_back (&thread_current()->child_process_list, &child_proc->elem);
     
-    /*T: exec must not return until we know whether loading worked. */
     sema_down (&child_proc->load_sema);
     
-    /*T: Report -1 if it didn't. */
     if (!child_proc->load_success)
     {
       tid = TID_ERROR;
@@ -136,8 +129,7 @@ process_execute (const char *file_name)
   return tid;
 }
 
-/*T: Runs in the new thread: loads the program, tells the parent how it
-     went, and jumps to user mode. */
+/*T: Runs in the new thread*/
 static void
 start_process (void *pinfo_)
 {
@@ -146,7 +138,6 @@ start_process (void *pinfo_)
   struct intr_frame if_;
   bool success;
   
-  /*T: So exit() can find where to store our status. */
   thread_current ()->child_process = proc_info->child_proc;
 
   /* Initialize interrupt frame and load executable. */
@@ -156,14 +147,14 @@ start_process (void *pinfo_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
 
-  /*T: Tell the parent (waiting in process_execute) whether loading worked. */
+  /*T: Tell the parent whether loading worked*/
   if (proc_info->child_proc != NULL)
   {
     proc_info->child_proc->load_success = success;
     sema_up (&proc_info->child_proc->load_sema);
   }
 
-  /*T: Clean up and exit if loading failed. */
+  /*T: Clean up and exit if loading failed*/
   palloc_free_page (file_name);
   free (proc_info);
   
@@ -201,7 +192,7 @@ process_wait (tid_t child_tid UNUSED)
   struct list_elem *e;
   struct child_process *child = NULL;
   
-  /*T: Only our own direct children can be waited for. */
+  /*T: own direct children can be waited for*/
   for (e = list_begin (&cur->child_process_list); 
        e != list_end (&cur->child_process_list);
        e = list_next (e))
@@ -214,20 +205,17 @@ process_wait (tid_t child_tid UNUSED)
     }
   }
   
-  /*T: Not our child, or already waited for. */
   if (child == NULL || child->waited)
     return -1;
   
-  /*T: Mark it, so a second wait returns -1. */
   child->waited = true;
   
-  /*T: Returns at once if the child already exited, since the semaphore
-       was already raised. */
+  /*T: Returns at once if the child already exited
   sema_down (&child->wait_sema);
   
   int exit_status = child->exit_status;
   
-  /*T: We have the status; the record isn't needed anymore. */
+  /*T: the status*/
   list_remove (&child->elem);
   free (child);
   
@@ -241,9 +229,7 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
   
-  /*T: Close our files while holding filesys_lock. If we died in the middle
-       of a system call we may already hold it; either way, release it at
-       the end so nobody gets stuck. */
+  /*T: Close files while holding filesys_lock*/
   struct list_elem *e;
   bool need_lock = !list_empty (&cur->file_name_list) || cur->executable != NULL;
   if (need_lock && !lock_held_by_current_thread (&filesys_lock))
@@ -258,7 +244,6 @@ process_exit (void)
     free (pf);
   }
   
-  /*T: Closing it also lets others write to the file again. */
   if (cur->executable != NULL)
   {
     file_close (cur->executable);
@@ -270,7 +255,6 @@ process_exit (void)
 
   enum intr_level old_level = intr_disable ();
 
-  /*T: Tell the parent I'm done, or free my record if the parent is gone. */
   if (cur->child_process != NULL)
   {
     if (cur->child_process->parent_alive)
@@ -283,8 +267,7 @@ process_exit (void)
     cur->child_process = NULL;
   }
 
-  /*T: Free records of children that already exited; tell the others
-       I'm gone. */
+  /*T: Free records of children that already exited*/
   while (!list_empty (&cur->child_process_list))
   {
     e = list_pop_front (&cur->child_process_list);
@@ -417,17 +400,14 @@ load (const char *file_name, void (**eip) (void), void **esp)
   char *fn_copy;
   char *save_ptr;
 
-  /*T: Copy the command line so we can split it. Free name_buf later,
-       because strtok_r may move past leading spaces. */
+  /*T: Copy the command line*/
   name_buf = malloc (strlen (file_name) + 1);
   if (name_buf == NULL)
     return false;
   strlcpy (name_buf, file_name, strlen (file_name) + 1);
 
-  /*T: The program file is the first word. */
   fn_copy = strtok_r (name_buf, " ", &save_ptr);
 
-  /*T: Hold filesys_lock for all file access while loading. */
   lock_acquire (&filesys_lock);
 
   /* Allocate and activate page directory. */
@@ -528,8 +508,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   success = true;
 
  done:
-  /*T: On success the file stays open (and write-protected) until the
-       process exits. */
+  /*T: file stays open until the process exits. */
   if (!success)
   {
     file_close (file);
@@ -664,21 +643,17 @@ setup_stack (void **esp, const char *file_name)
       {
         *esp = PHYS_BASE;
         
-        /*T: Lay out argc, argv and the argument strings the way main() expects. */
         char *token, *save_ptr;
         char *argv[MAX_ARGS];
         int argc = 0;
         int i;
         size_t needed;
 
-        /*T: strtok_r changes the string, so work on a copy. */
         char *fn_copy = malloc (strlen (file_name) + 1);
         if (fn_copy == NULL)
           return false;  /*T: Don't free kpage: it's mapped; pagedir_destroy frees it. */
         strlcpy (fn_copy, file_name, strlen (file_name) + 1);
 
-        /*T: Split into words. Too many words fails the load instead of
-             overflowing argv[]. */
         for (token = strtok_r (fn_copy, " ", &save_ptr); token != NULL;
              token = strtok_r (NULL, " ", &save_ptr))
         {
@@ -690,9 +665,7 @@ setup_stack (void **esp, const char *file_name)
           argv[argc++] = token;
         }
 
-        /*T: Make sure everything fits in the one stack page: the strings, up
-             to 3 bytes of padding, argv[0..argc] (with the NULL), argv, argc
-             and the fake return address. */
+        /*T: Make sure everything fits in the one stack page*/
         needed = 3 + (argc + 1) * sizeof (char *) + 3 * sizeof (void *);
         for (i = 0; i < argc; i++)
           needed += strlen (argv[i]) + 1;
@@ -702,7 +675,7 @@ setup_stack (void **esp, const char *file_name)
           return false;
         }
 
-        /*T: Copy the strings to the top of the stack, last one first. */
+        /*T: Copy the strings to the top of the stack*/
         int arg_addresses[MAX_ARGS];
         for (i = argc - 1; i >= 0; i--)
         {
@@ -712,25 +685,23 @@ setup_stack (void **esp, const char *file_name)
           arg_addresses[i] = (int) *esp;
         }
         
-        /*T: Round down to a multiple of 4 for faster access. */
+        /*T: Round down to a multiple of 4 for faster access*/
         while ((int) *esp % 4 != 0)
         {
           *esp -= 1;
           *(char *) *esp = 0;
         }
         
-        /*T: argv[argc] must be NULL. */
         *esp -= 4;
         *(int *) *esp = 0;
         
-        /*T: argv[] entries, last one first, so argv[0] ends up lowest. */
         for (i = argc - 1; i >= 0; i--)
         {
           *esp -= 4;
           *(int *) *esp = arg_addresses[i];
         }
         
-        /*T: Push argv (address of argv[0]). */
+        /*T: Push argv*/
         int argv_ptr = (int) *esp;
         *esp -= 4;
         *(int *) *esp = argv_ptr;
@@ -739,7 +710,6 @@ setup_stack (void **esp, const char *file_name)
         *esp -= 4;
         *(int *) *esp = argc;
         
-        /*T: Fake return address: main() never returns here; it calls exit(). */
         *esp -= 4;
         *(int *) *esp = 0;
         

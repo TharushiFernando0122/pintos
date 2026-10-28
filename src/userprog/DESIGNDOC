@@ -89,16 +89,16 @@ DESIGN CHOICES AND JUSTIFICATIONS (summary; details in the answers below)
 
 In userprog/process.c:
 
-    /*T: What the parent hands to the new thread: the command line and
-         the shared status record. */
     struct process_info
     {
-      char *fn_copy;                    /*T: Full command line (one page). */
-      struct child_process *child_proc; /*T: Status record shared with the child. */
+      char *fn_copy;
+      struct child_process *child_proc;
     };
 
 Purpose: hands the full command line and the child's status record to
 start_process() in the new thread.
+  fn_copy:    the full command line, copied into one page.
+  child_proc: the status record shared with the child.
 
     #define MAX_ARGS 128
 
@@ -110,8 +110,11 @@ have; more than this makes the load fail.
 Changed to take the full command line so it can push the arguments.
 Inside setup_stack() two local arrays are used:
 
-    char *argv[MAX_ARGS];          /* Tokens of the command line. */
-    int arg_addresses[MAX_ARGS];   /* User addresses of each pushed string. */
+    char *argv[MAX_ARGS];
+    int arg_addresses[MAX_ARGS];
+
+  argv:          the words of the command line.
+  arg_addresses: the user stack address of each pushed string.
 
 ---- ALGORITHMS ----
 
@@ -194,10 +197,10 @@ needs because threads can be preempted at any time.
 
 In threads/thread.h, added to struct thread (inside #ifdef USERPROG):
 
-    struct child_process *child_process; /*T: Shared with the parent: exit status and load result. */
-    struct list child_process_list;      /*T: One record per child started with exec. */
-    struct list file_name_list;          /*T: Files this process has open, with their fds. */
-    struct file *executable;             /*T: Our program file, kept open so nobody can write to it. */
+    struct child_process *child_process;
+    struct list child_process_list;
+    struct list file_name_list;
+    struct file *executable;
 
   child_process:      lets a process report its exit status to its parent.
   child_process_list: lets a parent find and wait for its children.
@@ -206,47 +209,59 @@ In threads/thread.h, added to struct thread (inside #ifdef USERPROG):
 
 In userprog/syscall.h:
 
-    /*T: A process id; same number as its thread id. */
     typedef int pid_t;
 
-    /*T: Shared by a parent and one child. It outlives the child, so the
-         parent can still read the exit status. */
+Purpose: a process id. It is the same number as the process's thread
+id.
+
     struct child_process
     {
-      int pid;                      /*T: The child's pid. */
-      int exit_status;              /*T: What the child passed to exit(), or -1 if killed. */
-      bool waited;                  /*T: Set on the first wait, so a second wait returns -1. */
-      bool exited;                  /*T: Has the child exited? */
-      bool load_success;            /*T: Did the child load successfully? */
-      bool parent_alive;            /*T: If false, the child frees this record itself. */
-      struct list_elem elem;        /*T: Element in the parent's child list. */
-      struct semaphore wait_sema;   /*T: Raised once when the child exits. */
-      struct semaphore load_sema;   /*T: Raised once the child knows if loading worked. */
+      int pid;
+      int exit_status;
+      bool waited;
+      bool exited;
+      bool load_success;
+      bool parent_alive;
+      struct list_elem elem;
+      struct semaphore wait_sema;
+      struct semaphore load_sema;
     };
 
 Purpose: a record shared by a parent and one child. It survives the
 child's exit so the parent can still read the exit status.
+  pid:          the child's pid.
+  exit_status:  what the child passed to exit(), or -1 if it was killed
+                or failed to load.
+  waited:       set on the first wait, so a second wait returns -1.
+  exited:       true once the child has finished.
+  load_success: whether the child's program loaded.
+  parent_alive: if false, the child frees this record itself on exit.
+  elem:         element in the parent's child_process_list.
+  wait_sema:    raised once when the child exits.
+  load_sema:    raised once the child knows whether loading worked.
 
-    /*T: One open file of a process. */
     struct process_file
     {
-      struct file *file;            /*T: The open file. */
-      int fd;                       /*T: The number the user program uses for it. */
-      struct list_elem elem;        /*T: Element in the process's open-file list. */
+      struct file *file;
+      int fd;
+      struct list_elem elem;
     };
 
 Purpose: one entry per open file descriptor in a process.
+  file: the open file.
+  fd:   the number the user program uses for it.
+  elem: element in the process's file_name_list.
 
     extern struct lock filesys_lock;
 
 In userprog/syscall.c:
 
-    struct lock filesys_lock;  /*T: Only the holder may use the file system (also used in process.c). */
+    struct lock filesys_lock;
 
 Purpose: only one thread at a time runs file system code. Used by the
 file system calls, load() and process_exit().
 
-    static int fd_counter = 2;  /*T: 0 and 1 are the keyboard and console. */   (in allocate_fd())
+    static int fd_counter = 2;      (inside allocate_fd())
 
 Purpose: hands out the next file descriptor number; starts at 2 because
 0 and 1 are the console.
@@ -296,7 +311,6 @@ the sys_* function, which can then read and write the user memory
 directly. For example, the read system call:
 
     case SYS_READ:
-      /*T: Check fd, buffer and size, then the whole buffer. */
       check_valid_ptr (stack_ptr + 1);
       check_valid_ptr ((char *)(stack_ptr + 1) + 3);
       check_valid_ptr (stack_ptr + 2);
